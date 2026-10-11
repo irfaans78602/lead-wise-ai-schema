@@ -1,0 +1,19 @@
+Folder PATH listing
+Volume serial number is 008A-B41B
+C:.
+³   00-lead-wise-ai-drop.sql
+³   10-lead-wise-ai-schema.sql
+³   20-lead-wise-ai-seed-base.sql
+³   30-lead-wise-ai-seed-pricing-zar.sql
+³   40-lead-wise-ai-seed-pricing-gbp.sql
+³   50-lead-wise-ai-seed-pricing-usd.sql
+³   README.md
+³   tree.txt
+³   
+ÃÄÄÄ_archive
+³       60-lead-wise-ai-seed.sql
+³       70-lead-wise-ai-seed-post.sql
+³       
+ÀÄÄÄ_cleanup
+        90-lead-wise-ai-clean-up.sql
+        
