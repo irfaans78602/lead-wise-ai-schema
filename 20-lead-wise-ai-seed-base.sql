@@ -16,6 +16,7 @@
 --   8.  settings                    (platform-wide constants)
 --   9.  pricing_tiers               (4 industry tiers)
 --  10.  pricing_segment_tiers       (23 segments mapped to a tier)
+--  11.  settings                    (schema_version)
 --
 -- Languages carried: en, ar, es, fr, zh.
 -- Currencies carried: ZAR, GBP, USD.
@@ -403,5 +404,25 @@ FROM (VALUES
 JOIN segments      s ON s.code = v.segment_code
 JOIN pricing_tiers t ON t.tier_code = v.tier_code
 ON CONFLICT (segment_id, start_date) DO NOTHING;
+
+-- =============================================================
+-- 11. Schema Version
+--     Read by loader.conn.current_schema_version() and compared
+--     against loader.cli.EXPECTED_SCHEMA_VERSION.
+--
+--     Bump this value whenever 10-lead-wise-ai-schema.sql changes
+--     in a way that affects what the loader writes (renamed column,
+--     changed CHECK, new NOT NULL, dropped table). Do NOT bump for
+--     purely additive changes the loader doesn't touch.
+--
+--     ON CONFLICT DO UPDATE (not DO NOTHING) so re-running the seed
+--     overwrites a stale value instead of leaving it in place.
+-- =============================================================
+INSERT INTO settings (setting_key, setting_value, setting_type, description)
+VALUES ('schema_version', 1, 'integer',
+        'Loader-expected schema version; compare against EXPECTED_SCHEMA_VERSION')
+ON CONFLICT (setting_key) DO UPDATE
+SET setting_value = EXCLUDED.setting_value,
+    description   = EXCLUDED.description;
 
 COMMIT;
