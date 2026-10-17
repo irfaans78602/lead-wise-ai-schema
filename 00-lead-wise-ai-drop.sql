@@ -16,6 +16,7 @@ BEGIN;
 -- -------------------------------------------------------------
 -- 1. Views
 -- -------------------------------------------------------------
+DROP VIEW IF EXISTS v_ask_ai_gaps                  CASCADE;
 DROP VIEW IF EXISTS active_ads_with_active_clients CASCADE;
 DROP VIEW IF EXISTS active_client_users            CASCADE;
 DROP VIEW IF EXISTS active_agency_users            CASCADE;

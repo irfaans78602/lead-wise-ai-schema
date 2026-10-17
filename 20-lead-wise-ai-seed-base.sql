@@ -424,5 +424,17 @@ VALUES ('schema_version', 1, 'integer',
 ON CONFLICT (setting_key) DO UPDATE
 SET setting_value = EXCLUDED.setting_value,
     description   = EXCLUDED.description;
+	
+INSERT INTO settings (setting_key, setting_value, setting_type, description, start_date, end_date)
+VALUES ('ask_ai_rate_limit_max', 100, 'integer', 'Max questions per IP for Ask AI', '1900-01-01', '9999-12-31')
+ON CONFLICT (setting_key) DO UPDATE SET setting_value = 25;
+
+INSERT INTO settings (setting_key, setting_value, setting_type, description, start_date, end_date)
+VALUES ('ask_ai_rate_limit_window_minutes', 60, 'integer', 'Time window in minutes for Ask AI rate limit', '1900-01-01', '9999-12-31')
+ON CONFLICT (setting_key) DO UPDATE SET setting_value = 60;
+
+INSERT INTO settings (setting_key, setting_value, setting_type, description, start_date, end_date)
+VALUES ('ask_ai_chunk_limit', 10, 'integer', 'Number of RAG chunks to retrieve from vector search', '1900-01-01', '9999-12-31')
+ON CONFLICT (setting_key) DO UPDATE SET setting_value = 10;
 
 COMMIT;

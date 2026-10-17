@@ -941,7 +941,7 @@ CREATE TABLE ask_ai_log (
     referer         TEXT,
     submitted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     status          TEXT NOT NULL DEFAULT 'success'
-                    CHECK (status IN ('success', 'db_error', 'embed_error', 'embed_error_quota', 'gen_error')),
+                    CHECK (status IN ('success', 'db_error', 'embed_error', 'embed_error_quota', 'gen_error', 'unanswered', 'no_context', 'notified', 'resolved')),
     chunks_found    INTEGER NOT NULL DEFAULT 0
 );
 
@@ -1188,5 +1188,19 @@ CREATE VIEW active_ads_with_active_clients AS
 SELECT a.*
 FROM active_ads a
 JOIN active_clients c ON c.client_id = a.client_id;
+
+-- =============================================================
+-- 39. Ask AI Gap Analysis View
+-- =============================================================
+CREATE OR REPLACE VIEW v_ask_ai_gaps AS
+SELECT 
+    question,
+    count(*) as times_asked,
+    array_agg(DISTINCT status) as error_types,
+    max(submitted_at) as last_asked
+FROM ask_ai_log
+WHERE status IN ('unanswered', 'no_context')
+GROUP BY question
+ORDER BY times_asked DESC;
 
 COMMIT;
