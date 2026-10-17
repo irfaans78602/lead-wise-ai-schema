@@ -2,50 +2,6 @@
 -- 10-lead-wise-ai-schema.sql
 -- Multi-tenant lead-qualification backend. Postgres 14+.
 -- CREATE-only. Run 00-lead-wise-ai-drop.sql first for a clean rebuild.
---
--- Execution order: 00 drop, 10 schema, 20 base seed, 30/40/50 pricing
--- (ZAR/GBP/USD), 60 instance seed, 70 post-seed, 90 clean-up.
---
--- Identity and versioning:
---   - All PKs on the loader-managed (config) side are UUID, caller-
---     supplied. No IDENTITY.
---   - Two identity tables are NOT versioned: clients and ads. Their
---     rows have a single lifecycle window and are upserted in place.
---     Config changes are immediate UPDATEs, never scheduled versions.
---   - Content tables ARE versioned:
---       client_messages, ad_confirmations, ad_reopen_prompts,
---       faqs, qualification_score.
---     Each has multiple rows per logical key, each with its own
---     start_date/end_date, and:
---       UNIQUE (logical_key, start_date)                -- no two versions on one day
---       UNIQUE INDEX ... WHERE end_date = '9999-12-31'  -- exactly one current version
---     The PK on each versioned table is a version pointer: it names
---     one specific row (one version), not the logical entity. This
---     is why answers.faq_id and customers.qualification_id are FKs
---     into those PKs — they point at the version that was live at
---     the time, not at "the question" or "the band".
---   - Runtime tables reference the VERSION PK where history matters
---     (answers.faq_id, customers.qualification_id) and the STABLE
---     identity where it doesn't (customers.ad_id).
---
--- Ads:
---   - ads = identity + config + lifecycle, unversioned.
---   - Leaves (reuse_ad_id IS NOT NULL) own no faqs / confirmations /
---     reopen prompts / score bands. effective_ad_id() walks the chain
---     to the root's stable ad_id, and content is fetched from the root.
---
--- Contacts:
---   - Append-only log of website contact form submissions. Not a
---     chatbot channel, not a customer, not a conversation. Written by
---     the chatbot API endpoint POST /contact/submit, called best-
---     effort by the Cloudflare Pages Function after Resend emails.
---     No FKs, no versioning, no active_* view.
---
--- RAG (Ask AI):
---   - site_content stores embeddings for the Ask AI widget.
---   - Requires the pgvector extension.
---   - Uses HNSW index for fast cosine similarity search.
---   - ask_ai_log stores questions and answers for analytics/abuse.
 -- =============================================================
 
 BEGIN;
@@ -976,6 +932,7 @@ CREATE INDEX ON site_content (locale) INCLUDE (embedding);
 CREATE TABLE ask_ai_log (
     ask_ai_log_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     submission_id   UUID NOT NULL UNIQUE,
+    session_id      UUID,
     question        TEXT NOT NULL,
     answer          TEXT NOT NULL,
     locale          VARCHAR(5),
@@ -984,12 +941,14 @@ CREATE TABLE ask_ai_log (
     referer         TEXT,
     submitted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     status          TEXT NOT NULL DEFAULT 'success'
-                    CHECK (status IN ('success', 'error', 'spam'))
+                    CHECK (status IN ('success', 'db_error', 'embed_error', 'embed_error_quota', 'gen_error')),
+    chunks_found    INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX ask_ai_log_submitted_idx  ON ask_ai_log (submitted_at DESC);
 CREATE INDEX ask_ai_log_locale_idx     ON ask_ai_log (locale, submitted_at DESC);
 CREATE INDEX ask_ai_log_ip_hash_idx    ON ask_ai_log (ip_hash) WHERE ip_hash IS NOT NULL;
+CREATE INDEX ask_ai_log_session_idx    ON ask_ai_log (session_id, submitted_at ASC);
 
 COMMENT ON TABLE ask_ai_log IS
 'Append-only log of Ask AI questions and answers. Written by '
