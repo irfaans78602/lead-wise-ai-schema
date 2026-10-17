@@ -40,12 +40,24 @@
 --     the chatbot API endpoint POST /contact/submit, called best-
 --     effort by the Cloudflare Pages Function after Resend emails.
 --     No FKs, no versioning, no active_* view.
+--
+-- RAG (Ask AI):
+--   - site_content stores embeddings for the Ask AI widget.
+--   - Requires the pgvector extension.
+--   - Uses HNSW index for fast cosine similarity search.
+--   - ask_ai_log stores questions and answers for analytics/abuse.
 -- =============================================================
 
 BEGIN;
 
 -- =============================================================
--- 0. Languages
+-- 0. Extensions
+-- =============================================================
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- =============================================================
+-- 1. Languages
 -- =============================================================
 CREATE TABLE languages (
     language_id   SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -62,7 +74,7 @@ CREATE TABLE languages (
 CREATE INDEX languages_active_idx ON languages (start_date, end_date);
 
 -- =============================================================
--- 1. Currencies
+-- 2. Currencies
 -- =============================================================
 CREATE TABLE currencies (
     currency_id   SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -80,7 +92,7 @@ CREATE TABLE currencies (
 CREATE INDEX currencies_active_idx ON currencies (start_date, end_date);
 
 -- =============================================================
--- 2. Countries
+-- 3. Countries
 -- =============================================================
 CREATE TABLE countries (
     country_id           SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -98,7 +110,7 @@ CREATE TABLE countries (
 CREATE INDEX countries_active_idx ON countries (start_date, end_date);
 
 -- =============================================================
--- 3. Segments
+-- 4. Segments
 -- =============================================================
 CREATE TABLE segments (
     segment_id    SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -114,7 +126,7 @@ CREATE INDEX segments_code_idx   ON segments (code);
 CREATE INDEX segments_active_idx ON segments (start_date, end_date);
 
 -- =============================================================
--- 4. Messages
+-- 5. Messages
 -- =============================================================
 CREATE TABLE messages (
     message_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -132,7 +144,7 @@ CREATE INDEX messages_code_idx   ON messages (message_code);
 CREATE INDEX messages_active_idx ON messages (start_date, end_date);
 
 -- =============================================================
--- 5. Settings
+-- 6. Settings
 -- =============================================================
 CREATE TABLE settings (
     setting_id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -150,7 +162,7 @@ CREATE TABLE settings (
 CREATE INDEX settings_active_idx ON settings (start_date, end_date);
 
 -- =============================================================
--- 6. Pricing Tiers
+-- 7. Pricing Tiers
 -- =============================================================
 CREATE TABLE pricing_tiers (
     tier_id       SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -168,7 +180,7 @@ CREATE TABLE pricing_tiers (
 CREATE INDEX pricing_tiers_active_idx ON pricing_tiers (start_date, end_date);
 
 -- =============================================================
--- 7. Pricing Segment Tiers
+-- 8. Pricing Segment Tiers
 -- =============================================================
 CREATE TABLE pricing_segment_tiers (
     segment_tier_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -186,7 +198,7 @@ CREATE INDEX pricing_segment_tiers_tier_idx    ON pricing_segment_tiers (tier_id
 CREATE INDEX pricing_segment_tiers_active_idx  ON pricing_segment_tiers (start_date, end_date);
 
 -- =============================================================
--- 8. Pricing Rates
+-- 9. Pricing Rates
 -- =============================================================
 CREATE TABLE pricing_rates (
     rate_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -212,7 +224,7 @@ CREATE INDEX pricing_rates_country_idx  ON pricing_rates (country_id);
 CREATE INDEX pricing_rates_active_idx   ON pricing_rates (start_date, end_date);
 
 -- =============================================================
--- 9. Pricing Website
+-- 10. Pricing Website
 -- =============================================================
 CREATE TABLE pricing_website (
     website_pricing_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -232,7 +244,7 @@ CREATE INDEX pricing_website_country_idx ON pricing_website (country_id);
 CREATE INDEX pricing_website_active_idx  ON pricing_website (start_date, end_date);
 
 -- =============================================================
--- 10. Pricing Addons
+-- 11. Pricing Addons
 -- =============================================================
 CREATE TABLE pricing_addons (
     addon_id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -276,8 +288,7 @@ CREATE INDEX pricing_addons_country_idx ON pricing_addons (country_id);
 CREATE INDEX pricing_addons_active_idx  ON pricing_addons (start_date, end_date);
 
 -- =============================================================
--- 11. Agencies
---     UUID PK, caller-supplied. NOT versioned.
+-- 12. Agencies
 -- =============================================================
 CREATE TABLE agencies (
     agency_id         UUID PRIMARY KEY,
@@ -297,15 +308,7 @@ CREATE INDEX agencies_parent_idx ON agencies (parent_agency_id);
 CREATE INDEX agencies_active_idx ON agencies (start_date, end_date);
 
 -- =============================================================
--- 12. Clients
---     UUID PK, caller-supplied. NOT versioned: config changes are
---     in-place UPDATEs. start_date / end_date are commercial
---     lifecycle only — start_date is onboarding, end_date is when
---     the client leaves LeadWise AI.
---
---     language_id is optional. When NULL, the runtime resolves the
---     effective language via db.get_effective_language_id(), which
---     falls through ad.language_id → client.language_id → 'en'.
+-- 13. Clients
 -- =============================================================
 CREATE TABLE clients (
     client_id            UUID PRIMARY KEY,
@@ -348,7 +351,7 @@ CREATE UNIQUE INDEX clients_one_platform_owner
     WHERE is_platform_owner = TRUE;
 
 -- =============================================================
--- 13. Pricing Discounts
+-- 14. Pricing Discounts
 -- =============================================================
 CREATE TABLE pricing_discounts (
     pricing_discount_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -432,8 +435,7 @@ COMMENT ON TABLE pricing_discounts IS
 'countries.default_currency_id for country-scoped rows.';
 
 -- =============================================================
--- 14. Client Messages — VERSIONED
---     Logical key: client_id. One current version per client.
+-- 15. Client Messages — VERSIONED
 -- =============================================================
 CREATE TABLE client_messages (
     client_message_id   UUID PRIMARY KEY,
@@ -456,9 +458,7 @@ CREATE UNIQUE INDEX client_messages_current_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 15. Client Whatsapps — NOT VERSIONED (upsert-in-place)
---     phone_number_id is Meta-issued and never changes.
---     display_phone_number is cosmetic and can be UPDATEd in place.
+-- 16. Client Whatsapps — NOT VERSIONED
 -- =============================================================
 CREATE TABLE client_whatsapps (
     phone_number_id        TEXT PRIMARY KEY,
@@ -474,10 +474,7 @@ CREATE INDEX client_whatsapps_client_idx ON client_whatsapps (client_id);
 CREATE INDEX client_whatsapps_active_idx ON client_whatsapps (start_date, end_date);
 
 -- =============================================================
--- 16. Ads — STABLE IDENTITY + CONFIG, NOT VERSIONED
---     uuid PK supplied by loader. Holds identity, config, and
---     lifecycle. Content (faqs, confirmations, prompts, score
---     bands) lives in the content tables, versioned independently.
+-- 17. Ads — STABLE IDENTITY + CONFIG, NOT VERSIONED
 -- =============================================================
 CREATE TABLE ads (
     ad_id               UUID PRIMARY KEY,
@@ -510,8 +507,7 @@ CREATE INDEX ads_language_idx    ON ads (language_id);
 CREATE INDEX ads_placeholder_idx ON ads (client_id, is_placeholder) WHERE is_placeholder = TRUE;
 
 -- =============================================================
--- 17. Ad Confirmations — VERSIONED
---     Logical key: ad_id. Root-only.
+-- 18. Ad Confirmations — VERSIONED
 -- =============================================================
 CREATE TABLE ad_confirmations (
     ad_confirmation_id  UUID PRIMARY KEY,
@@ -534,8 +530,7 @@ CREATE UNIQUE INDEX ad_confirmations_current_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 18. Ad Reopen Prompts — VERSIONED
---     Logical key: ad_id. Root-only.
+-- 19. Ad Reopen Prompts — VERSIONED
 -- =============================================================
 CREATE TABLE ad_reopen_prompts (
     ad_reopen_prompt_id   UUID PRIMARY KEY,
@@ -562,9 +557,7 @@ CREATE UNIQUE INDEX ad_reopen_prompts_current_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 19. FAQs — VERSIONED
---     Logical key: (ad_id, question_id) and (ad_id, question_order).
---     Root-only. Version PK referenced by answers.faq_id.
+-- 20. FAQs — VERSIONED
 -- =============================================================
 CREATE TABLE faqs (
     faq_id           UUID PRIMARY KEY,
@@ -615,9 +608,7 @@ CREATE UNIQUE INDEX faqs_current_order_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 20. Customers — RUNTIME
---     ad_id → stable ads.ad_id (identity, not version)
---     qualification_id → specific qualification_score version
+-- 21. Customers — RUNTIME
 -- =============================================================
 CREATE TABLE customers (
     customer_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -646,7 +637,7 @@ CREATE INDEX customers_qualification_idx ON customers (qualification_id);
 CREATE INDEX customers_active_idx        ON customers (start_date, end_date);
 
 -- =============================================================
--- 21. Conversations — RUNTIME
+-- 22. Conversations — RUNTIME
 -- =============================================================
 CREATE TABLE conversations (
     conversation_id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -672,8 +663,7 @@ CREATE INDEX conversations_language_idx ON conversations (language_id);
 CREATE INDEX conversations_active_idx   ON conversations (start_date, end_date);
 
 -- =============================================================
--- 22. Answers — RUNTIME
---     faq_id → specific faq version (history accurate)
+-- 23. Answers — RUNTIME
 -- =============================================================
 CREATE TABLE answers (
     answer_id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -695,7 +685,7 @@ CREATE INDEX answers_faq_idx          ON answers (faq_id);
 CREATE INDEX answers_active_idx       ON answers (start_date, end_date);
 
 -- =============================================================
--- 23. Qualification Levels
+-- 24. Qualification Levels
 -- =============================================================
 CREATE TABLE qualification_levels (
     qualification_level_id SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -714,8 +704,7 @@ CREATE INDEX qualification_levels_language_idx ON qualification_levels (language
 CREATE INDEX qualification_levels_active_idx   ON qualification_levels (start_date, end_date);
 
 -- =============================================================
--- 24. Qualification Score — VERSIONED
---     Logical key: (ad_id, level_code). Root-only.
+-- 25. Qualification Score — VERSIONED
 -- =============================================================
 CREATE TABLE qualification_score (
     qualification_score_id  UUID PRIMARY KEY,
@@ -738,8 +727,6 @@ CREATE UNIQUE INDEX qualification_score_current_unique
     ON qualification_score (ad_id, level_code)
     WHERE end_date = '9999-12-31';
 
-CREATE EXTENSION IF NOT EXISTS btree_gist;
-
 -- Overlap guard: for any ad, no two CURRENT score bands may overlap.
 ALTER TABLE qualification_score
     ADD CONSTRAINT qualification_score_no_overlap
@@ -754,7 +741,7 @@ ALTER TABLE customers
     ON DELETE SET NULL;
 
 -- =============================================================
--- 25. Qualifications — RUNTIME
+-- 26. Qualifications — RUNTIME
 -- =============================================================
 CREATE TABLE qualifications (
     qualification_event_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -777,11 +764,7 @@ CREATE INDEX qualifications_qualified_at_idx ON qualifications (qualified_at);
 CREATE INDEX qualifications_active_idx       ON qualifications (start_date, end_date);
 
 -- =============================================================
--- 26. Client Users
---     client_id is nullable: an operator can be loaded before the
---     client they belong to, then linked by hand. google_sub is the
---     stable identity (UNIQUE) and is what the loader uses as the
---     row identity across runs.
+-- 27. Client Users
 -- =============================================================
 CREATE TABLE client_users (
     client_user_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -806,7 +789,7 @@ CREATE INDEX client_users_email_idx  ON client_users (lower(email));
 CREATE INDEX client_users_active_idx ON client_users (client_id, start_date, end_date);
 
 -- =============================================================
--- 27. Agency Users — agency_id is UUID
+-- 28. Agency Users
 -- =============================================================
 CREATE TABLE agency_users (
     agency_user_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -831,7 +814,7 @@ CREATE INDEX agency_users_email_idx  ON agency_users (lower(email));
 CREATE INDEX agency_users_active_idx ON agency_users (agency_id, start_date, end_date);
 
 -- =============================================================
--- 28. Customer Statuses — RUNTIME
+-- 29. Customer Statuses — RUNTIME
 -- =============================================================
 CREATE TABLE customer_statuses (
     customer_status_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -858,7 +841,7 @@ CREATE INDEX customer_statuses_agency_user_idx ON customer_statuses (agency_user
 CREATE INDEX customer_statuses_active_idx      ON customer_statuses (start_date, end_date);
 
 -- =============================================================
--- 29. Message Rate Limits
+-- 30. Message Rate Limits
 -- =============================================================
 CREATE TABLE message_rate_limits (
     channel          TEXT NOT NULL,
@@ -877,7 +860,7 @@ CREATE INDEX message_rate_limits_cleanup_idx ON message_rate_limits (window_star
 CREATE INDEX message_rate_limits_active_idx  ON message_rate_limits (start_date, end_date);
 
 -- =============================================================
--- 30. Invoice Payments — client_id is UUID
+-- 31. Invoice Payments
 -- =============================================================
 CREATE TABLE invoice_payments (
     invoice_payment_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -930,27 +913,11 @@ COMMENT ON TABLE invoice_payments IS
 'Currency is derived from clients.currency_id; there is no per-invoice snapshot.';
 
 -- =============================================================
--- 31. Contacts — RUNTIME, APPEND-ONLY
---     Website contact form submissions. NOT a chatbot channel,
---     NOT a customer, NOT a conversation. A record of a message
---     received through the site's contact form.
---
---     Written by the chatbot API endpoint POST /contact/submit,
---     which is called best-effort by the Cloudflare Pages Function
---     (functions/api/contact.js) after the Resend emails are sent.
---
---     submission_id is generated by Cloudflare and used as the
---     idempotency key: retries of the same submission collapse to
---     one row via ON CONFLICT DO NOTHING.
---
---     ip_hash is SHA-256(IP + server-side salt). Never the raw IP.
+-- 32. Contacts — RUNTIME, APPEND-ONLY
 -- =============================================================
 CREATE TABLE contacts (
     contact_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-
     submission_id   UUID NOT NULL UNIQUE,
-
-    -- Form fields, verbatim as submitted
     name            TEXT NOT NULL,
     email           TEXT NOT NULL,
     company         TEXT,
@@ -958,22 +925,15 @@ CREATE TABLE contacts (
     enquiry         TEXT,
     message         TEXT NOT NULL,
     consent         BOOLEAN NOT NULL,
-
-    -- Request metadata, for analytics
     locale          VARCHAR(5),
     ip_hash         TEXT,
     user_agent      TEXT,
     referer         TEXT,
-
-    -- Lifecycle
     submitted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     replied_at      TIMESTAMPTZ,
     status          TEXT NOT NULL DEFAULT 'new'
                     CHECK (status IN ('new','read','replied','archived','spam')),
-
-    -- Honeypot signal for later analysis
     honeypot_hit    BOOLEAN NOT NULL DEFAULT FALSE,
-
     CHECK (replied_at IS NULL OR replied_at >= submitted_at)
 );
 
@@ -991,7 +951,54 @@ COMMENT ON TABLE contacts IS
 'qualifications. Analytics only.';
 
 -- =============================================================
--- 32. Triggers
+-- 33. Ask AI — RAG CONTENT (VECTOR STORE)
+-- =============================================================
+CREATE TABLE site_content (
+    id              BIGSERIAL PRIMARY KEY,
+    locale          VARCHAR(15) NOT NULL,
+    source          TEXT NOT NULL,
+    chunk_text      TEXT NOT NULL,
+    embedding       VECTOR(768),
+    start_date      DATE NOT NULL DEFAULT '1900-01-01',
+    end_date        DATE NOT NULL DEFAULT '9999-12-31',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- HNSW index for fast cosine similarity search
+CREATE INDEX ON site_content USING hnsw (embedding vector_cosine_ops);
+
+-- Composite index for locale-filtered queries
+CREATE INDEX ON site_content (locale) INCLUDE (embedding);
+
+-- =============================================================
+-- 34. Ask AI — RUNTIME LOG
+-- =============================================================
+CREATE TABLE ask_ai_log (
+    ask_ai_log_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    submission_id   UUID NOT NULL UNIQUE,
+    question        TEXT NOT NULL,
+    answer          TEXT NOT NULL,
+    locale          VARCHAR(5),
+    ip_hash         TEXT,
+    user_agent      TEXT,
+    referer         TEXT,
+    submitted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status          TEXT NOT NULL DEFAULT 'success'
+                    CHECK (status IN ('success', 'error', 'spam'))
+);
+
+CREATE INDEX ask_ai_log_submitted_idx  ON ask_ai_log (submitted_at DESC);
+CREATE INDEX ask_ai_log_locale_idx     ON ask_ai_log (locale, submitted_at DESC);
+CREATE INDEX ask_ai_log_ip_hash_idx    ON ask_ai_log (ip_hash) WHERE ip_hash IS NOT NULL;
+
+COMMENT ON TABLE ask_ai_log IS
+'Append-only log of Ask AI questions and answers. Written by '
+'POST /ask-ai/submit (Flask). Idempotent on submission_id. '
+'Does not create customers, conversations, or qualifications. '
+'Analytics only.';
+
+-- =============================================================
+-- 35. Triggers
 -- =============================================================
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
@@ -1041,10 +1048,7 @@ CREATE TRIGGER customer_statuses_sync_current
     FOR EACH ROW EXECUTE FUNCTION sync_customer_current_status();
 
 -- =============================================================
--- 32a. Reuse-chain guard (root-only content)
---      Applies to faqs, ad_confirmations, ad_reopen_prompts,
---      qualification_score. Does NOT apply to ads itself — a leaf
---      is a row in ads with reuse_ad_id set.
+-- 36. Reuse-chain guard (root-only content)
 -- =============================================================
 CREATE OR REPLACE FUNCTION forbid_content_on_leaf_ad()
 RETURNS TRIGGER AS $$
@@ -1079,9 +1083,7 @@ CREATE TRIGGER ad_reopen_prompts_root_only
     FOR EACH ROW EXECUTE FUNCTION forbid_content_on_leaf_ad();
 
 -- =============================================================
--- 33. effective_ad_id() — UUID
---     Given any ad_id (root or leaf), walks the reuse chain and
---     returns the ROOT's stable ad_id.
+-- 37. effective_ad_id() — UUID
 -- =============================================================
 CREATE OR REPLACE FUNCTION effective_ad_id(p_ad_id UUID)
 RETURNS UUID
@@ -1101,7 +1103,7 @@ AS $$
 $$;
 
 -- =============================================================
--- 34. Active views
+-- 38. Active views
 -- =============================================================
 CREATE VIEW active_languages AS
 SELECT * FROM languages

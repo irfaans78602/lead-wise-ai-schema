@@ -84,9 +84,10 @@ DROP TABLE IF EXISTS settings                CASCADE;
 DROP TABLE IF EXISTS messages                CASCADE;
 DROP TABLE IF EXISTS message_rate_limits     CASCADE;
 
--- Append-only runtime log, no FKs into the rest of the schema.
--- Placed here with the other standalone runtime tables.
+-- Append-only runtime logs
 DROP TABLE IF EXISTS contacts                CASCADE;
+DROP TABLE IF EXISTS ask_ai_log              CASCADE;
+DROP TABLE IF EXISTS site_content            CASCADE;
 
 DROP TABLE IF EXISTS segments                CASCADE;
 DROP TABLE IF EXISTS countries               CASCADE;
