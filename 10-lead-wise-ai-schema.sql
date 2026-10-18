@@ -580,6 +580,7 @@ CREATE TABLE customers (
     qualification_count  INT NOT NULL DEFAULT 0,
     first_qualified_at   TIMESTAMPTZ,
     last_qualified_at    TIMESTAMPTZ,
+    ip_hash              VARCHAR(64),
     start_date           DATE NOT NULL DEFAULT '1900-01-01',
     end_date             DATE NOT NULL DEFAULT '9999-12-31',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -591,6 +592,7 @@ CREATE TABLE customers (
 CREATE INDEX customers_ad_status_idx     ON customers (ad_id, status);
 CREATE INDEX customers_qualification_idx ON customers (qualification_id);
 CREATE INDEX customers_active_idx        ON customers (start_date, end_date);
+CREATE INDEX idx_customers_ip_hash       ON customers (ip_hash);
 
 -- =============================================================
 -- 22. Conversations — RUNTIME

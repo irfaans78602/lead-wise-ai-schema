@@ -4,47 +4,12 @@
 -- Run after 10-lead-wise-ai-schema.sql.
 -- Run BEFORE 30/40/50 (pricing) and 60-lead-wise-ai-seed.sql.
 -- Safe to re-run: all inserts and updates are idempotent.
---
--- Contents:
---   1.  languages
---   2.  currencies
---   3.  countries
---   4.  segments
---   5.  qualification_levels        (en, ar, es, fr, zh)
---   6.  messages                    (customer_status_labels, en/ar/es/fr/zh)
---   7.  messages                    (system prompts)
---   8.  settings                    (platform-wide constants)
---   9.  pricing_tiers               (4 industry tiers)
---  10.  pricing_segment_tiers       (23 segments mapped to a tier)
---  11.  settings                    (schema_version)
---
--- Languages carried: en, ar, es, fr, zh.
--- Currencies carried: ZAR, GBP, USD.
--- Countries carried:  ZA, GB, US.
---
--- Pricing model notes (rate values themselves live in 30/40/50):
---   - Per (tier, country) the pricing page shows a range for the
---     monthly base fee and for the per-lead fee. The rate card
---     confirms the exact figure within the range.
---   - Website setup is a one-time fee with four standard pages
---     included; additional pages are priced per page.
---   - Pilot pricing: 50% off website setup and 50% off the monthly
---     base fee for the first 6 months. Per-lead fees are not
---     discounted during pilot. Carried on clients.is_pilot and
---     clients.pilot_ends_on; percentages live in settings.
---
--- Global volume discount tiers live in 60-lead-wise-ai-seed.sql.
---
--- Placeholder syntax for outbound text: {N} resolves to the answer
--- of the question with question_id N, {N.M} to option M of question N
--- when chosen. {part} is the offending fragment supplied by validation.
 -- =============================================================
 
 BEGIN;
 
 -- =============================================================
 -- 1. Languages
---    The five languages the platform ships with.
 -- =============================================================
 INSERT INTO languages (code, name, native_name) VALUES
     ('en', 'English', 'English'),
@@ -56,7 +21,6 @@ ON CONFLICT (code) DO NOTHING;
 
 -- =============================================================
 -- 2. Currencies
---    Only the three currencies billed today: ZAR, GBP, USD.
 -- =============================================================
 INSERT INTO currencies (code, name, symbol, minor_unit) VALUES
     ('ZAR', 'South African Rand', 'R', 2),
@@ -66,9 +30,6 @@ ON CONFLICT (code) DO NOTHING;
 
 -- =============================================================
 -- 3. Countries
---    ISO alpha-2 code, name, default_language_id, default_currency_id.
---    Country drives the rate card. Language drives content render.
---    Only the three countries we bill in today: ZA, GB, US.
 -- =============================================================
 INSERT INTO countries (code, name, default_language_id, default_currency_id)
 SELECT v.code, v.name, l.language_id, c.currency_id
@@ -83,8 +44,6 @@ ON CONFLICT (code) DO NOTHING;
 
 -- =============================================================
 -- 4. Segments
---    The 23 business-type segments. Platform-wide vocabulary,
---    identical across every country.
 -- =============================================================
 INSERT INTO segments (code, name) VALUES
     ('trades_home_services',    'Trades & Home Services'),
@@ -114,33 +73,26 @@ ON CONFLICT (code) DO NOTHING;
 
 -- =============================================================
 -- 5. Qualification Levels
---    Four codes. One row per (level_code, language_id).
---    Languages carried: en, ar, es, fr, zh.
 -- =============================================================
 INSERT INTO qualification_levels (level_code, language_id, label)
 SELECT v.level_code, l.language_id, v.label
 FROM (VALUES
-    -- English
     ('low',       'en', 'Low'),
     ('medium',    'en', 'Medium'),
     ('high',      'en', 'High'),
     ('very_high', 'en', 'Very High'),
-    -- Arabic
     ('low',       'ar', 'منخفض'),
     ('medium',    'ar', 'متوسط'),
     ('high',      'ar', 'مرتفع'),
     ('very_high', 'ar', 'مرتفع جداً'),
-    -- Spanish
     ('low',       'es', 'Bajo'),
     ('medium',    'es', 'Medio'),
     ('high',      'es', 'Alto'),
     ('very_high', 'es', 'Muy alto'),
-    -- French
     ('low',       'fr', 'Faible'),
     ('medium',    'fr', 'Moyen'),
     ('high',      'fr', 'Élevé'),
     ('very_high', 'fr', 'Très élevé'),
-    -- Chinese
     ('low',       'zh', '低'),
     ('medium',    'zh', '中'),
     ('high',      'zh', '高'),
@@ -151,15 +103,6 @@ ON CONFLICT (level_code, language_id, start_date) DO NOTHING;
 
 -- =============================================================
 -- 6. Messages — customer_status_labels
---    Dashboard labels for customers.status and customer_statuses.status.
---    Outer JSONB key = language code (matches languages.code)
---    Inner JSONB key = status code (matches the CHECK on customers.status)
---    Languages carried: en, ar, es, fr, zh.
---
---    On conflict, the existing message_text is merged with the new
---    one, so re-running this seed is a no-op on an already-populated
---    row (the || operator keeps existing keys and overwrites matching
---    ones with identical values).
 -- =============================================================
 INSERT INTO messages (message_code, message_text, description)
 VALUES (
@@ -234,16 +177,6 @@ SET message_text = messages.message_text || EXCLUDED.message_text,
 
 -- =============================================================
 -- 7. Messages — system prompts
---    message_text is JSONB keyed by language code. One row per
---    message_code.
---
---    Most rows are English-only. The default_* fallbacks carry all
---    five languages because they render directly to the prospect:
---      default_confirmation         — ad has no ad_confirmations row
---      default_closed               — client has no client_messages row
---      default_reopen_prompt        — ad has no ad_reopen_prompts row
---      default_reopen_button_title
---      default_forward_button_title
 -- =============================================================
 INSERT INTO messages (message_code, message_text, description) VALUES
     ('rate_limit',
@@ -329,8 +262,6 @@ ON CONFLICT (message_code) DO NOTHING;
 
 -- =============================================================
 -- 8. Settings
---    Platform-wide constants read by db.py::get_setting_*().
---    Values are NUMERIC(10,4); setting_type is informational.
 -- =============================================================
 INSERT INTO settings (setting_key, setting_value, setting_type, description) VALUES
     ('agency_discount_pct',       20.0000,  'number',  'Wholesale discount for agencies'),
@@ -354,8 +285,6 @@ ON CONFLICT (setting_key) DO NOTHING;
 
 -- =============================================================
 -- 9. Pricing Tiers
---    Four industry tiers. Platform-wide, not currency-specific.
---    Every segment maps to exactly one tier (see section 10).
 -- =============================================================
 INSERT INTO pricing_tiers (tier_code, tier_name, tier_order, description) VALUES
     ('standard',     'Standard',     1, 'Trades, beauty, pet, non-profit, hospitality, fitness'),
@@ -366,26 +295,20 @@ ON CONFLICT (tier_code) DO NOTHING;
 
 -- =============================================================
 -- 10. Pricing Segment Tiers
---     Maps each of the 23 segments to exactly one tier.
---     Currencies add pricing_rates rows against these tiers
---     in the 30/40/50 pricing seeds.
 -- =============================================================
 INSERT INTO pricing_segment_tiers (segment_id, tier_id)
 SELECT s.segment_id, t.tier_id
 FROM (VALUES
-    -- Tier 1 Standard
     ('trades_home_services',  'standard'),
     ('beauty_personal_care',  'standard'),
     ('pet_services',          'standard'),
     ('non_profit_ngo',        'standard'),
     ('hospitality_bookings',  'standard'),
     ('fitness_coaching',      'standard'),
-    -- Tier 2 Professional
     ('education_training',    'professional'),
     ('professional_services', 'professional'),
     ('retail_ecommerce',      'professional'),
     ('travel_tourism',        'professional'),
-    -- Tier 3 High-Value
     ('automotive',            'high_value'),
     ('health_wellness',       'high_value'),
     ('high_ticket_services',  'high_value'),
@@ -393,7 +316,6 @@ FROM (VALUES
     ('other_bespoke',         'high_value'),
     ('logistics_transport',   'high_value'),
     ('agriculture_farming',   'high_value'),
-    -- Tier 4 Premium
     ('real_estate',           'premium'),
     ('b2b_enterprise',        'premium'),
     ('financial_services',    'premium'),
@@ -407,16 +329,6 @@ ON CONFLICT (segment_id, start_date) DO NOTHING;
 
 -- =============================================================
 -- 11. Schema Version
---     Read by loader.conn.current_schema_version() and compared
---     against loader.cli.EXPECTED_SCHEMA_VERSION.
---
---     Bump this value whenever 10-lead-wise-ai-schema.sql changes
---     in a way that affects what the loader writes (renamed column,
---     changed CHECK, new NOT NULL, dropped table). Do NOT bump for
---     purely additive changes the loader doesn't touch.
---
---     ON CONFLICT DO UPDATE (not DO NOTHING) so re-running the seed
---     overwrites a stale value instead of leaving it in place.
 -- =============================================================
 INSERT INTO settings (setting_key, setting_value, setting_type, description)
 VALUES ('schema_version', 1, 'integer',
@@ -424,17 +336,32 @@ VALUES ('schema_version', 1, 'integer',
 ON CONFLICT (setting_key) DO UPDATE
 SET setting_value = EXCLUDED.setting_value,
     description   = EXCLUDED.description;
-	
-INSERT INTO settings (setting_key, setting_value, setting_type, description, start_date, end_date)
-VALUES ('ask_ai_rate_limit_max', 100, 'integer', 'Max questions per IP for Ask AI', '1900-01-01', '9999-12-31')
+
+-- =============================================================
+-- 12. Ask AI Limits
+-- =============================================================
+INSERT INTO settings (setting_key, setting_value, setting_type, description)
+VALUES ('ask_ai_rate_limit_max', 25, 'integer', 'Max questions per IP for Ask AI')
 ON CONFLICT (setting_key) DO UPDATE SET setting_value = 25;
 
-INSERT INTO settings (setting_key, setting_value, setting_type, description, start_date, end_date)
-VALUES ('ask_ai_rate_limit_window_minutes', 60, 'integer', 'Time window in minutes for Ask AI rate limit', '1900-01-01', '9999-12-31')
+INSERT INTO settings (setting_key, setting_value, setting_type, description)
+VALUES ('ask_ai_rate_limit_window_minutes', 60, 'integer', 'Time window in minutes for Ask AI rate limit')
 ON CONFLICT (setting_key) DO UPDATE SET setting_value = 60;
 
-INSERT INTO settings (setting_key, setting_value, setting_type, description, start_date, end_date)
-VALUES ('ask_ai_chunk_limit', 10, 'integer', 'Number of RAG chunks to retrieve from vector search', '1900-01-01', '9999-12-31')
+INSERT INTO settings (setting_key, setting_value, setting_type, description)
+VALUES ('ask_ai_chunk_limit', 10, 'integer', 'Number of RAG chunks to retrieve from vector search')
 ON CONFLICT (setting_key) DO UPDATE SET setting_value = 10;
+
+-- =============================================================
+-- 13. Website Chat Limits (Added)
+-- =============================================================
+INSERT INTO settings (setting_key, setting_value, setting_type, description)
+VALUES 
+  ('chat_rate_limit_max', 25, 'integer', 'Max messages per IP for Website Chat'),
+  ('chat_rate_limit_window_minutes', 60, 'integer', 'Time window in minutes for Website Chat rate limit')
+ON CONFLICT (setting_key) DO UPDATE 
+SET 
+  setting_value = EXCLUDED.setting_value,
+  setting_type = EXCLUDED.setting_type;
 
 COMMIT;
