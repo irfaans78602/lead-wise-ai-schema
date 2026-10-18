@@ -1,7 +1,6 @@
 -- =============================================================
 -- 10-lead-wise-ai-schema.sql
 -- Multi-tenant lead-qualification backend. Postgres 14+.
--- CREATE-only. Run 00-lead-wise-ai-drop.sql first for a clean rebuild.
 -- =============================================================
 
 BEGIN;
@@ -384,12 +383,6 @@ CREATE UNIQUE INDEX pricing_discounts_client_field_unique
     ON pricing_discounts (client_id, segment_id, field_name)
     WHERE client_id IS NOT NULL AND field_name IS NOT NULL AND end_date = '9999-12-31';
 
-COMMENT ON TABLE pricing_discounts IS
-'Volume tiers (platform-wide, tier-independent), agency tiers, and negotiated field overrides. '
-'Volume applies to the per-lead fee above thresholds: 26–100 15%, 101–500 25%, 501+ 35%. '
-'Billing currency is clients.currency_id for client-scoped rows, '
-'countries.default_currency_id for country-scoped rows.';
-
 -- =============================================================
 -- 15. Client Messages — VERSIONED
 -- =============================================================
@@ -432,8 +425,9 @@ CREATE INDEX client_whatsapps_active_idx ON client_whatsapps (start_date, end_da
 -- =============================================================
 -- 17. Ads — STABLE IDENTITY + CONFIG, NOT VERSIONED
 -- =============================================================
+-- CHANGED: ad_id is now VARCHAR(255) to match source_ad_id
 CREATE TABLE ads (
-    ad_id               UUID PRIMARY KEY,
+    ad_id               VARCHAR(255) PRIMARY KEY,
     source_ad_id        TEXT,
     client_id           UUID NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
     whatsapp_number_id  TEXT REFERENCES client_whatsapps(phone_number_id) ON DELETE SET NULL,
@@ -442,7 +436,7 @@ CREATE TABLE ads (
     email_to            TEXT,
     email_cc            TEXT,
     email_bcc           TEXT,
-    reuse_ad_id         UUID REFERENCES ads(ad_id) ON DELETE RESTRICT,
+    reuse_ad_id         VARCHAR(255) REFERENCES ads(ad_id) ON DELETE RESTRICT,
     language_id         SMALLINT REFERENCES languages(language_id) ON DELETE RESTRICT,
     reopen_policy       TEXT
                         CHECK (reopen_policy IN ('reopen','prompt','forward')),
@@ -467,7 +461,7 @@ CREATE INDEX ads_placeholder_idx ON ads (client_id, is_placeholder) WHERE is_pla
 -- =============================================================
 CREATE TABLE ad_confirmations (
     ad_confirmation_id  UUID PRIMARY KEY,
-    ad_id               UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id               VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     message_text        JSONB NOT NULL,
     start_date          DATE NOT NULL DEFAULT '1900-01-01',
     end_date            DATE NOT NULL DEFAULT '9999-12-31',
@@ -490,7 +484,7 @@ CREATE UNIQUE INDEX ad_confirmations_current_unique
 -- =============================================================
 CREATE TABLE ad_reopen_prompts (
     ad_reopen_prompt_id   UUID PRIMARY KEY,
-    ad_id                 UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                 VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     prompt_text           JSONB NOT NULL,
     reopen_button_title   JSONB NOT NULL,
     forward_button_title  JSONB NOT NULL,
@@ -517,7 +511,7 @@ CREATE UNIQUE INDEX ad_reopen_prompts_current_unique
 -- =============================================================
 CREATE TABLE faqs (
     faq_id           UUID PRIMARY KEY,
-    ad_id            UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id            VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     question_id      SMALLINT NOT NULL,
     question_order   INT NOT NULL,
     question_text    JSONB NOT NULL,
@@ -568,7 +562,7 @@ CREATE UNIQUE INDEX faqs_current_order_unique
 -- =============================================================
 CREATE TABLE customers (
     customer_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    ad_id                UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     channel              TEXT NOT NULL CHECK (channel IN ('whatsapp','messenger','instagram','tiktok','chat')),
     channel_user_id      TEXT NOT NULL,
     status               TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN (
@@ -666,7 +660,7 @@ CREATE INDEX qualification_levels_active_idx   ON qualification_levels (start_da
 -- =============================================================
 CREATE TABLE qualification_score (
     qualification_score_id  UUID PRIMARY KEY,
-    ad_id                   UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                   VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     score                   INT4RANGE NOT NULL,
     level_code              TEXT NOT NULL,
     start_date              DATE NOT NULL DEFAULT '1900-01-01',
@@ -685,13 +679,13 @@ CREATE UNIQUE INDEX qualification_score_current_unique
     ON qualification_score (ad_id, level_code)
     WHERE end_date = '9999-12-31';
 
--- Overlap guard: for any ad, no two CURRENT score bands may overlap.
+-- Overlap guard
 ALTER TABLE qualification_score
     ADD CONSTRAINT qualification_score_no_overlap
     EXCLUDE USING gist (ad_id WITH =, score WITH &&)
     WHERE (end_date = '9999-12-31');
 
--- Customers FK to a specific score version (added after the table exists).
+-- Customers FK to a specific score version
 ALTER TABLE customers
     ADD CONSTRAINT customers_qualification_fk
     FOREIGN KEY (qualification_id)
@@ -706,7 +700,7 @@ CREATE TABLE qualifications (
     conversation_id         BIGINT NOT NULL UNIQUE
                             REFERENCES conversations(conversation_id) ON DELETE CASCADE,
     customer_id             BIGINT NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
-    ad_id                   UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                   VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     qualification_score     INT NOT NULL,
     qualification_id        UUID REFERENCES qualification_score(qualification_score_id) ON DELETE SET NULL,
     qualified_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -865,11 +859,6 @@ CREATE INDEX invoice_payments_unpaid_idx
 CREATE UNIQUE INDEX invoice_payments_one_per_period
     ON invoice_payments (client_id, billing_period_start, billing_period_end);
 
-COMMENT ON TABLE invoice_payments IS
-'Invoices issued to clients and their payment status. '
-'Runtime table: no start_date / end_date lifecycle. '
-'Currency is derived from clients.currency_id; there is no per-invoice snapshot.';
-
 -- =============================================================
 -- 32. Contacts — RUNTIME, APPEND-ONLY
 -- =============================================================
@@ -901,13 +890,6 @@ CREATE INDEX contacts_email_idx      ON contacts (lower(email));
 CREATE INDEX contacts_ip_hash_idx    ON contacts (ip_hash) WHERE ip_hash IS NOT NULL;
 CREATE INDEX contacts_enquiry_idx    ON contacts (enquiry) WHERE enquiry IS NOT NULL;
 
-COMMENT ON TABLE contacts IS
-'Append-only log of website contact form submissions. Written by '
-'POST /contact/submit (Flask), called best-effort by the Cloudflare '
-'Pages Function. Never seeded; always runtime. Idempotent on '
-'submission_id. Does not create customers, conversations, or '
-'qualifications. Analytics only.';
-
 -- =============================================================
 -- 33. Ask AI — RAG CONTENT (VECTOR STORE)
 -- =============================================================
@@ -922,10 +904,7 @@ CREATE TABLE site_content (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- HNSW index for fast cosine similarity search
 CREATE INDEX ON site_content USING hnsw (embedding vector_cosine_ops);
-
--- Composite index for locale-filtered queries
 CREATE INDEX ON site_content (locale) INCLUDE (embedding);
 
 -- =============================================================
@@ -951,12 +930,6 @@ CREATE INDEX ask_ai_log_submitted_idx  ON ask_ai_log (submitted_at DESC);
 CREATE INDEX ask_ai_log_locale_idx     ON ask_ai_log (locale, submitted_at DESC);
 CREATE INDEX ask_ai_log_ip_hash_idx    ON ask_ai_log (ip_hash) WHERE ip_hash IS NOT NULL;
 CREATE INDEX ask_ai_log_session_idx    ON ask_ai_log (session_id, submitted_at ASC);
-
-COMMENT ON TABLE ask_ai_log IS
-'Append-only log of Ask AI questions and answers. Written by '
-'POST /ask-ai/submit (Flask). Idempotent on submission_id. '
-'Does not create customers, conversations, or qualifications. '
-'Analytics only.';
 
 -- =============================================================
 -- 35. Triggers
@@ -1044,16 +1017,16 @@ CREATE TRIGGER ad_reopen_prompts_root_only
     FOR EACH ROW EXECUTE FUNCTION forbid_content_on_leaf_ad();
 
 -- =============================================================
--- 37. effective_ad_id() — UUID
+-- 37. effective_ad_id() — Takes VARCHAR, returns VARCHAR
 -- =============================================================
-CREATE OR REPLACE FUNCTION effective_ad_id(p_ad_id UUID)
-RETURNS UUID
+CREATE OR REPLACE FUNCTION effective_ad_id(p_ad_id VARCHAR)
+RETURNS VARCHAR
 LANGUAGE SQL
 STABLE
 AS $$
     WITH RECURSIVE chain AS (
         SELECT ad_id, reuse_ad_id, 0 AS depth
-        FROM ads WHERE ad_id = p_ad_id
+        FROM ads WHERE source_ad_id = p_ad_id OR ad_id = p_ad_id
         UNION ALL
         SELECT a.ad_id, a.reuse_ad_id, c.depth + 1
         FROM ads a
