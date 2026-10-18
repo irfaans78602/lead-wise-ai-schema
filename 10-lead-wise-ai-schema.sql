@@ -425,9 +425,8 @@ CREATE INDEX client_whatsapps_active_idx ON client_whatsapps (start_date, end_da
 -- =============================================================
 -- 17. Ads — STABLE IDENTITY + CONFIG, NOT VERSIONED
 -- =============================================================
--- CHANGED: ad_id is now VARCHAR(255) to match source_ad_id
 CREATE TABLE ads (
-    ad_id               VARCHAR(255) PRIMARY KEY,
+    ad_id               UUID PRIMARY KEY,
     source_ad_id        TEXT,
     client_id           UUID NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
     whatsapp_number_id  TEXT REFERENCES client_whatsapps(phone_number_id) ON DELETE SET NULL,
@@ -436,7 +435,7 @@ CREATE TABLE ads (
     email_to            TEXT,
     email_cc            TEXT,
     email_bcc           TEXT,
-    reuse_ad_id         VARCHAR(255) REFERENCES ads(ad_id) ON DELETE RESTRICT,
+    reuse_ad_id         UUID REFERENCES ads(ad_id) ON DELETE RESTRICT,
     language_id         SMALLINT REFERENCES languages(language_id) ON DELETE RESTRICT,
     reopen_policy       TEXT
                         CHECK (reopen_policy IN ('reopen','prompt','forward')),
@@ -461,7 +460,7 @@ CREATE INDEX ads_placeholder_idx ON ads (client_id, is_placeholder) WHERE is_pla
 -- =============================================================
 CREATE TABLE ad_confirmations (
     ad_confirmation_id  UUID PRIMARY KEY,
-    ad_id               VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id               UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     message_text        JSONB NOT NULL,
     start_date          DATE NOT NULL DEFAULT '1900-01-01',
     end_date            DATE NOT NULL DEFAULT '9999-12-31',
@@ -484,7 +483,7 @@ CREATE UNIQUE INDEX ad_confirmations_current_unique
 -- =============================================================
 CREATE TABLE ad_reopen_prompts (
     ad_reopen_prompt_id   UUID PRIMARY KEY,
-    ad_id                 VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                 UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     prompt_text           JSONB NOT NULL,
     reopen_button_title   JSONB NOT NULL,
     forward_button_title  JSONB NOT NULL,
@@ -511,7 +510,7 @@ CREATE UNIQUE INDEX ad_reopen_prompts_current_unique
 -- =============================================================
 CREATE TABLE faqs (
     faq_id           UUID PRIMARY KEY,
-    ad_id            VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id            UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     question_id      SMALLINT NOT NULL,
     question_order   INT NOT NULL,
     question_text    JSONB NOT NULL,
@@ -562,7 +561,7 @@ CREATE UNIQUE INDEX faqs_current_order_unique
 -- =============================================================
 CREATE TABLE customers (
     customer_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    ad_id                VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     channel              TEXT NOT NULL CHECK (channel IN ('whatsapp','messenger','instagram','tiktok','chat')),
     channel_user_id      TEXT NOT NULL,
     status               TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN (
@@ -660,7 +659,7 @@ CREATE INDEX qualification_levels_active_idx   ON qualification_levels (start_da
 -- =============================================================
 CREATE TABLE qualification_score (
     qualification_score_id  UUID PRIMARY KEY,
-    ad_id                   VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                   UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     score                   INT4RANGE NOT NULL,
     level_code              TEXT NOT NULL,
     start_date              DATE NOT NULL DEFAULT '1900-01-01',
@@ -700,7 +699,7 @@ CREATE TABLE qualifications (
     conversation_id         BIGINT NOT NULL UNIQUE
                             REFERENCES conversations(conversation_id) ON DELETE CASCADE,
     customer_id             BIGINT NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
-    ad_id                   VARCHAR(255) NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
+    ad_id                   UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
     qualification_score     INT NOT NULL,
     qualification_id        UUID REFERENCES qualification_score(qualification_score_id) ON DELETE SET NULL,
     qualified_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1017,16 +1016,16 @@ CREATE TRIGGER ad_reopen_prompts_root_only
     FOR EACH ROW EXECUTE FUNCTION forbid_content_on_leaf_ad();
 
 -- =============================================================
--- 37. effective_ad_id() — Takes VARCHAR, returns VARCHAR
+-- 37. effective_ad_id() — Takes TEXT slug, returns UUID root
 -- =============================================================
-CREATE OR REPLACE FUNCTION effective_ad_id(p_ad_id VARCHAR)
-RETURNS VARCHAR
+CREATE OR REPLACE FUNCTION effective_ad_id(p_source_ad_id TEXT)
+RETURNS UUID
 LANGUAGE SQL
 STABLE
 AS $$
     WITH RECURSIVE chain AS (
         SELECT ad_id, reuse_ad_id, 0 AS depth
-        FROM ads WHERE source_ad_id = p_ad_id OR ad_id = p_ad_id
+        FROM ads WHERE source_ad_id = p_source_ad_id
         UNION ALL
         SELECT a.ad_id, a.reuse_ad_id, c.depth + 1
         FROM ads a

@@ -98,7 +98,13 @@ DROP TABLE IF EXISTS languages               CASCADE;
 -- -------------------------------------------------------------
 -- 3. Functions (after tables, so no trigger still uses them)
 -- -------------------------------------------------------------
-DROP FUNCTION IF EXISTS effective_ad_id(UUID)             CASCADE;
+-- Catch every possible signature of effective_ad_id from past migrations
+DROP FUNCTION IF EXISTS effective_ad_id(bigint)           CASCADE;
+DROP FUNCTION IF EXISTS effective_ad_id(text)             CASCADE;
+DROP FUNCTION IF EXISTS effective_ad_id(varchar)          CASCADE;
+DROP FUNCTION IF EXISTS effective_ad_id(uuid)             CASCADE;
+
+-- Other trigger functions
 DROP FUNCTION IF EXISTS forbid_content_on_leaf_ad()       CASCADE;
 DROP FUNCTION IF EXISTS sync_customer_current_status()    CASCADE;
 DROP FUNCTION IF EXISTS set_updated_at()                  CASCADE;
