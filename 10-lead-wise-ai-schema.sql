@@ -407,29 +407,12 @@ CREATE UNIQUE INDEX client_messages_current_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 16. Client Whatsapps — NOT VERSIONED
--- =============================================================
-CREATE TABLE client_whatsapps (
-    phone_number_id        TEXT PRIMARY KEY,
-    client_id              UUID NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
-    display_phone_number   TEXT NOT NULL,
-    start_date             DATE NOT NULL DEFAULT '1900-01-01',
-    end_date               DATE NOT NULL DEFAULT '9999-12-31',
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (start_date <= end_date)
-);
-
-CREATE INDEX client_whatsapps_client_idx ON client_whatsapps (client_id);
-CREATE INDEX client_whatsapps_active_idx ON client_whatsapps (start_date, end_date);
-
--- =============================================================
--- 17. Ads — STABLE IDENTITY + CONFIG, NOT VERSIONED
+-- 16. Ads — STABLE IDENTITY + CONFIG, NOT VERSIONED
 -- =============================================================
 CREATE TABLE ads (
     ad_id               UUID PRIMARY KEY,
     source_ad_id        TEXT,
     client_id           UUID NOT NULL REFERENCES clients(client_id) ON DELETE CASCADE,
-    whatsapp_number_id  TEXT REFERENCES client_whatsapps(phone_number_id) ON DELETE SET NULL,
     ad_name             TEXT NOT NULL,
     is_placeholder      BOOLEAN NOT NULL DEFAULT FALSE,
     email_to            TEXT,
@@ -451,12 +434,11 @@ CREATE INDEX ads_client_idx      ON ads (client_id);
 CREATE INDEX ads_source_idx      ON ads (source_ad_id) WHERE source_ad_id IS NOT NULL;
 CREATE INDEX ads_reuse_ad_idx    ON ads (reuse_ad_id);
 CREATE INDEX ads_active_idx      ON ads (start_date, end_date);
-CREATE INDEX ads_whatsapp_idx    ON ads (whatsapp_number_id);
 CREATE INDEX ads_language_idx    ON ads (language_id);
 CREATE INDEX ads_placeholder_idx ON ads (client_id, is_placeholder) WHERE is_placeholder = TRUE;
 
 -- =============================================================
--- 18. Ad Confirmations — VERSIONED
+-- 17. Ad Confirmations — VERSIONED
 -- =============================================================
 CREATE TABLE ad_confirmations (
     ad_confirmation_id  UUID PRIMARY KEY,
@@ -479,7 +461,7 @@ CREATE UNIQUE INDEX ad_confirmations_current_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 19. Ad Reopen Prompts — VERSIONED
+-- 18. Ad Reopen Prompts — VERSIONED
 -- =============================================================
 CREATE TABLE ad_reopen_prompts (
     ad_reopen_prompt_id   UUID PRIMARY KEY,
@@ -506,7 +488,7 @@ CREATE UNIQUE INDEX ad_reopen_prompts_current_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 20. FAQs — VERSIONED
+-- 19. FAQs — VERSIONED
 -- =============================================================
 CREATE TABLE faqs (
     faq_id           UUID PRIMARY KEY,
@@ -557,12 +539,12 @@ CREATE UNIQUE INDEX faqs_current_order_unique
     WHERE end_date = '9999-12-31';
 
 -- =============================================================
--- 21. Customers — RUNTIME
+-- 20. Customers — RUNTIME
 -- =============================================================
 CREATE TABLE customers (
     customer_id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     ad_id                UUID NOT NULL REFERENCES ads(ad_id) ON DELETE CASCADE,
-    channel              TEXT NOT NULL CHECK (channel IN ('whatsapp','messenger','instagram','tiktok','chat')),
+    channel              TEXT NOT NULL CHECK (channel IN ('messenger','instagram','tiktok','chat')),
     channel_user_id      TEXT NOT NULL,
     status               TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN (
         'Pending','Contacted','Qualified','Not-Qualified','No-Response',
@@ -588,7 +570,7 @@ CREATE INDEX customers_active_idx        ON customers (start_date, end_date);
 CREATE INDEX idx_customers_ip_hash       ON customers (ip_hash);
 
 -- =============================================================
--- 22. Conversations — RUNTIME
+-- 21. Conversations — RUNTIME
 -- =============================================================
 CREATE TABLE conversations (
     conversation_id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -614,7 +596,7 @@ CREATE INDEX conversations_language_idx ON conversations (language_id);
 CREATE INDEX conversations_active_idx   ON conversations (start_date, end_date);
 
 -- =============================================================
--- 23. Answers — RUNTIME
+-- 22. Answers — RUNTIME
 -- =============================================================
 CREATE TABLE answers (
     answer_id        BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -636,7 +618,7 @@ CREATE INDEX answers_faq_idx          ON answers (faq_id);
 CREATE INDEX answers_active_idx       ON answers (start_date, end_date);
 
 -- =============================================================
--- 24. Qualification Levels
+-- 23. Qualification Levels
 -- =============================================================
 CREATE TABLE qualification_levels (
     qualification_level_id SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -655,7 +637,7 @@ CREATE INDEX qualification_levels_language_idx ON qualification_levels (language
 CREATE INDEX qualification_levels_active_idx   ON qualification_levels (start_date, end_date);
 
 -- =============================================================
--- 25. Qualification Score — VERSIONED
+-- 24. Qualification Score — VERSIONED
 -- =============================================================
 CREATE TABLE qualification_score (
     qualification_score_id  UUID PRIMARY KEY,
@@ -692,7 +674,7 @@ ALTER TABLE customers
     ON DELETE SET NULL;
 
 -- =============================================================
--- 26. Qualifications — RUNTIME
+-- 25. Qualifications — RUNTIME
 -- =============================================================
 CREATE TABLE qualifications (
     qualification_event_id  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -715,7 +697,7 @@ CREATE INDEX qualifications_qualified_at_idx ON qualifications (qualified_at);
 CREATE INDEX qualifications_active_idx       ON qualifications (start_date, end_date);
 
 -- =============================================================
--- 27. Client Users
+-- 26. Client Users
 -- =============================================================
 CREATE TABLE client_users (
     client_user_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -740,7 +722,7 @@ CREATE INDEX client_users_email_idx  ON client_users (lower(email));
 CREATE INDEX client_users_active_idx ON client_users (client_id, start_date, end_date);
 
 -- =============================================================
--- 28. Agency Users
+-- 27. Agency Users
 -- =============================================================
 CREATE TABLE agency_users (
     agency_user_id       BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -765,7 +747,7 @@ CREATE INDEX agency_users_email_idx  ON agency_users (lower(email));
 CREATE INDEX agency_users_active_idx ON agency_users (agency_id, start_date, end_date);
 
 -- =============================================================
--- 29. Customer Statuses — RUNTIME
+-- 28. Customer Statuses — RUNTIME
 -- =============================================================
 CREATE TABLE customer_statuses (
     customer_status_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -792,7 +774,7 @@ CREATE INDEX customer_statuses_agency_user_idx ON customer_statuses (agency_user
 CREATE INDEX customer_statuses_active_idx      ON customer_statuses (start_date, end_date);
 
 -- =============================================================
--- 30. Message Rate Limits
+-- 29. Message Rate Limits
 -- =============================================================
 CREATE TABLE message_rate_limits (
     channel          TEXT NOT NULL,
@@ -811,7 +793,7 @@ CREATE INDEX message_rate_limits_cleanup_idx ON message_rate_limits (window_star
 CREATE INDEX message_rate_limits_active_idx  ON message_rate_limits (start_date, end_date);
 
 -- =============================================================
--- 31. Invoice Payments
+-- 30. Invoice Payments
 -- =============================================================
 CREATE TABLE invoice_payments (
     invoice_payment_id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -859,7 +841,7 @@ CREATE UNIQUE INDEX invoice_payments_one_per_period
     ON invoice_payments (client_id, billing_period_start, billing_period_end);
 
 -- =============================================================
--- 32. Contacts — RUNTIME, APPEND-ONLY
+-- 31. Contacts — RUNTIME, APPEND-ONLY
 -- =============================================================
 CREATE TABLE contacts (
     contact_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -890,7 +872,7 @@ CREATE INDEX contacts_ip_hash_idx    ON contacts (ip_hash) WHERE ip_hash IS NOT 
 CREATE INDEX contacts_enquiry_idx    ON contacts (enquiry) WHERE enquiry IS NOT NULL;
 
 -- =============================================================
--- 33. Ask AI — RAG CONTENT (VECTOR STORE)
+-- 32. Ask AI — RAG CONTENT (VECTOR STORE)
 -- =============================================================
 CREATE TABLE site_content (
     id              BIGSERIAL PRIMARY KEY,
@@ -903,11 +885,14 @@ CREATE TABLE site_content (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- HNSW index for vector similarity search
 CREATE INDEX ON site_content USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX ON site_content (locale) INCLUDE (embedding);
+
+-- Standard B-Tree index for locale filtering (FIXED: removed INCLUDE (embedding))
+CREATE INDEX ON site_content (locale);
 
 -- =============================================================
--- 34. Ask AI — RUNTIME LOG
+-- 33. Ask AI — RUNTIME LOG
 -- =============================================================
 CREATE TABLE ask_ai_log (
     ask_ai_log_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -931,7 +916,7 @@ CREATE INDEX ask_ai_log_ip_hash_idx    ON ask_ai_log (ip_hash) WHERE ip_hash IS 
 CREATE INDEX ask_ai_log_session_idx    ON ask_ai_log (session_id, submitted_at ASC);
 
 -- =============================================================
--- 35. Triggers
+-- 34. Triggers
 -- =============================================================
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
@@ -981,7 +966,7 @@ CREATE TRIGGER customer_statuses_sync_current
     FOR EACH ROW EXECUTE FUNCTION sync_customer_current_status();
 
 -- =============================================================
--- 36. Reuse-chain guard (root-only content)
+-- 35. Reuse-chain guard (root-only content)
 -- =============================================================
 CREATE OR REPLACE FUNCTION forbid_content_on_leaf_ad()
 RETURNS TRIGGER AS $$
@@ -1016,7 +1001,7 @@ CREATE TRIGGER ad_reopen_prompts_root_only
     FOR EACH ROW EXECUTE FUNCTION forbid_content_on_leaf_ad();
 
 -- =============================================================
--- 37. effective_ad_id() — Takes TEXT slug, returns UUID root
+-- 36. effective_ad_id() — Takes TEXT slug, returns UUID root
 -- =============================================================
 CREATE OR REPLACE FUNCTION effective_ad_id(p_source_ad_id TEXT)
 RETURNS UUID
@@ -1036,7 +1021,7 @@ AS $$
 $$;
 
 -- =============================================================
--- 38. Active views
+-- 37. Active views
 -- =============================================================
 CREATE VIEW active_languages AS
 SELECT * FROM languages
@@ -1096,10 +1081,6 @@ WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
 
 CREATE VIEW active_client_messages AS
 SELECT * FROM client_messages
-WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
-
-CREATE VIEW active_client_whatsapps AS
-SELECT * FROM client_whatsapps
 WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
 
 CREATE VIEW active_ads AS
@@ -1164,7 +1145,7 @@ FROM active_ads a
 JOIN active_clients c ON c.client_id = a.client_id;
 
 -- =============================================================
--- 39. Ask AI Gap Analysis View
+-- 38. Ask AI Gap Analysis View
 -- =============================================================
 CREATE OR REPLACE VIEW v_ask_ai_gaps AS
 SELECT 

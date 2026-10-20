@@ -32,7 +32,6 @@ DROP VIEW IF EXISTS active_faqs                    CASCADE;
 DROP VIEW IF EXISTS active_ad_reopen_prompts       CASCADE;
 DROP VIEW IF EXISTS active_ad_confirmations        CASCADE;
 DROP VIEW IF EXISTS active_ads                     CASCADE;
-DROP VIEW IF EXISTS active_client_whatsapps        CASCADE;
 DROP VIEW IF EXISTS active_client_messages         CASCADE;
 DROP VIEW IF EXISTS active_clients                 CASCADE;
 DROP VIEW IF EXISTS active_agencies                CASCADE;
@@ -63,7 +62,6 @@ DROP TABLE IF EXISTS faqs                    CASCADE;
 DROP TABLE IF EXISTS ad_confirmations        CASCADE;
 DROP TABLE IF EXISTS ad_reopen_prompts       CASCADE;
 DROP TABLE IF EXISTS ads                     CASCADE;
-DROP TABLE IF EXISTS client_whatsapps        CASCADE;
 
 DROP TABLE IF EXISTS pricing_discounts       CASCADE;
 DROP TABLE IF EXISTS pricing_addons          CASCADE;
