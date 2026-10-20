@@ -9,7 +9,6 @@ BEGIN;
 -- 0. Extensions
 -- =============================================================
 CREATE EXTENSION IF NOT EXISTS btree_gist;
-CREATE EXTENSION IF NOT EXISTS vector;
 
 -- =============================================================
 -- 1. Languages
@@ -556,17 +555,13 @@ CREATE TABLE customers (
     first_qualified_at   TIMESTAMPTZ,
     last_qualified_at    TIMESTAMPTZ,
     ip_hash              VARCHAR(64),
-    start_date           DATE NOT NULL DEFAULT '1900-01-01',
-    end_date             DATE NOT NULL DEFAULT '9999-12-31',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (ad_id, channel, channel_user_id),
-    CHECK (start_date <= end_date)
+    UNIQUE (ad_id, channel, channel_user_id)
 );
 
 CREATE INDEX customers_ad_status_idx     ON customers (ad_id, status);
 CREATE INDEX customers_qualification_idx ON customers (qualification_id);
-CREATE INDEX customers_active_idx        ON customers (start_date, end_date);
 CREATE INDEX idx_customers_ip_hash       ON customers (ip_hash);
 
 -- =============================================================
@@ -583,17 +578,13 @@ CREATE TABLE conversations (
     reopened_from_conversation_id   BIGINT REFERENCES conversations(conversation_id) ON DELETE SET NULL,
     awaiting_reopen_response        BOOLEAN NOT NULL DEFAULT FALSE,
     language_id                     SMALLINT REFERENCES languages(language_id) ON DELETE RESTRICT,
-    start_date                      DATE NOT NULL DEFAULT '1900-01-01',
-    end_date                        DATE NOT NULL DEFAULT '9999-12-31',
     created_at                      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at                      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (start_date <= end_date)
+    updated_at                      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX conversations_customer_idx ON conversations (customer_id, created_at DESC);
 CREATE INDEX conversations_state_idx    ON conversations (state);
 CREATE INDEX conversations_language_idx ON conversations (language_id);
-CREATE INDEX conversations_active_idx   ON conversations (start_date, end_date);
 
 -- =============================================================
 -- 22. Answers — RUNTIME
@@ -604,18 +595,14 @@ CREATE TABLE answers (
     faq_id           UUID NOT NULL REFERENCES faqs(faq_id) ON DELETE CASCADE,
     answer_text      TEXT,
     answer_values    JSONB,
-    start_date       DATE NOT NULL DEFAULT '1900-01-01',
-    end_date         DATE NOT NULL DEFAULT '9999-12-31',
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (conversation_id, faq_id),
-    CHECK (start_date <= end_date),
     CHECK (answer_text IS NOT NULL OR answer_values IS NOT NULL),
     CHECK (answer_values IS NULL OR jsonb_typeof(answer_values) = 'array')
 );
 
 CREATE INDEX answers_conversation_idx ON answers (conversation_id);
 CREATE INDEX answers_faq_idx          ON answers (faq_id);
-CREATE INDEX answers_active_idx       ON answers (start_date, end_date);
 
 -- =============================================================
 -- 23. Qualification Levels
@@ -685,16 +672,12 @@ CREATE TABLE qualifications (
     qualification_score     INT NOT NULL,
     qualification_id        UUID REFERENCES qualification_score(qualification_score_id) ON DELETE SET NULL,
     qualified_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
-    start_date              DATE NOT NULL DEFAULT '1900-01-01',
-    end_date                DATE NOT NULL DEFAULT '9999-12-31',
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (start_date <= end_date)
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX qualifications_customer_idx     ON qualifications (customer_id, qualified_at DESC);
 CREATE INDEX qualifications_ad_idx           ON qualifications (ad_id, qualified_at DESC);
 CREATE INDEX qualifications_qualified_at_idx ON qualifications (qualified_at);
-CREATE INDEX qualifications_active_idx       ON qualifications (start_date, end_date);
 
 -- =============================================================
 -- 26. Client Users
@@ -760,10 +743,7 @@ CREATE TABLE customer_statuses (
     agency_user_id     BIGINT REFERENCES agency_users(agency_user_id) ON DELETE SET NULL,
     note               TEXT,
     changed_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    start_date         DATE NOT NULL DEFAULT '1900-01-01',
-    end_date           DATE NOT NULL DEFAULT '9999-12-31',
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CHECK (start_date <= end_date),
     CHECK (client_user_id IS NULL OR agency_user_id IS NULL)
 );
 
@@ -771,7 +751,6 @@ CREATE INDEX customer_statuses_customer_idx    ON customer_statuses (customer_id
 CREATE INDEX customer_statuses_changed_at_idx  ON customer_statuses (changed_at);
 CREATE INDEX customer_statuses_client_user_idx ON customer_statuses (client_user_id);
 CREATE INDEX customer_statuses_agency_user_idx ON customer_statuses (agency_user_id);
-CREATE INDEX customer_statuses_active_idx      ON customer_statuses (start_date, end_date);
 
 -- =============================================================
 -- 29. Message Rate Limits
@@ -782,15 +761,11 @@ CREATE TABLE message_rate_limits (
     window_start     TIMESTAMPTZ NOT NULL,
     window_seconds   INT NOT NULL,
     message_count    INT NOT NULL DEFAULT 0,
-    start_date       DATE NOT NULL DEFAULT '1900-01-01',
-    end_date         DATE NOT NULL DEFAULT '9999-12-31',
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (channel, channel_user_id, window_start, window_seconds),
-    CHECK (start_date <= end_date)
+    PRIMARY KEY (channel, channel_user_id, window_start, window_seconds)
 );
 
 CREATE INDEX message_rate_limits_cleanup_idx ON message_rate_limits (window_start);
-CREATE INDEX message_rate_limits_active_idx  ON message_rate_limits (start_date, end_date);
 
 -- =============================================================
 -- 30. Invoice Payments
@@ -872,51 +847,7 @@ CREATE INDEX contacts_ip_hash_idx    ON contacts (ip_hash) WHERE ip_hash IS NOT 
 CREATE INDEX contacts_enquiry_idx    ON contacts (enquiry) WHERE enquiry IS NOT NULL;
 
 -- =============================================================
--- 32. Ask AI — RAG CONTENT (VECTOR STORE)
--- =============================================================
-CREATE TABLE site_content (
-    id              BIGSERIAL PRIMARY KEY,
-    locale          VARCHAR(15) NOT NULL,
-    source          TEXT NOT NULL,
-    chunk_text      TEXT NOT NULL,
-    embedding       VECTOR(768),
-    start_date      DATE NOT NULL DEFAULT '1900-01-01',
-    end_date        DATE NOT NULL DEFAULT '9999-12-31',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- HNSW index for vector similarity search
-CREATE INDEX ON site_content USING hnsw (embedding vector_cosine_ops);
-
--- Standard B-Tree index for locale filtering (FIXED: removed INCLUDE (embedding))
-CREATE INDEX ON site_content (locale);
-
--- =============================================================
--- 33. Ask AI — RUNTIME LOG
--- =============================================================
-CREATE TABLE ask_ai_log (
-    ask_ai_log_id   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    submission_id   UUID NOT NULL UNIQUE,
-    session_id      UUID,
-    question        TEXT NOT NULL,
-    answer          TEXT NOT NULL,
-    locale          VARCHAR(5),
-    ip_hash         TEXT,
-    user_agent      TEXT,
-    referer         TEXT,
-    submitted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    status          TEXT NOT NULL DEFAULT 'success'
-                    CHECK (status IN ('success', 'db_error', 'embed_error', 'embed_error_quota', 'gen_error', 'unanswered', 'no_context', 'notified', 'resolved')),
-    chunks_found    INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX ask_ai_log_submitted_idx  ON ask_ai_log (submitted_at DESC);
-CREATE INDEX ask_ai_log_locale_idx     ON ask_ai_log (locale, submitted_at DESC);
-CREATE INDEX ask_ai_log_ip_hash_idx    ON ask_ai_log (ip_hash) WHERE ip_hash IS NOT NULL;
-CREATE INDEX ask_ai_log_session_idx    ON ask_ai_log (session_id, submitted_at ASC);
-
--- =============================================================
--- 34. Triggers
+-- 32. Triggers
 -- =============================================================
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
@@ -966,7 +897,7 @@ CREATE TRIGGER customer_statuses_sync_current
     FOR EACH ROW EXECUTE FUNCTION sync_customer_current_status();
 
 -- =============================================================
--- 35. Reuse-chain guard (root-only content)
+-- 33. Reuse-chain guard (root-only content)
 -- =============================================================
 CREATE OR REPLACE FUNCTION forbid_content_on_leaf_ad()
 RETURNS TRIGGER AS $$
@@ -1001,7 +932,7 @@ CREATE TRIGGER ad_reopen_prompts_root_only
     FOR EACH ROW EXECUTE FUNCTION forbid_content_on_leaf_ad();
 
 -- =============================================================
--- 36. effective_ad_id() — Takes TEXT slug, returns UUID root
+-- 34. effective_ad_id() — Takes TEXT slug, returns UUID root
 -- =============================================================
 CREATE OR REPLACE FUNCTION effective_ad_id(p_source_ad_id TEXT)
 RETURNS UUID
@@ -1021,7 +952,7 @@ AS $$
 $$;
 
 -- =============================================================
--- 37. Active views
+-- 35. Active views
 -- =============================================================
 CREATE VIEW active_languages AS
 SELECT * FROM languages
@@ -1099,36 +1030,12 @@ CREATE VIEW active_faqs AS
 SELECT * FROM faqs
 WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
 
-CREATE VIEW active_customers AS
-SELECT * FROM customers
-WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
-
-CREATE VIEW active_conversations AS
-SELECT * FROM conversations
-WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
-
-CREATE VIEW active_answers AS
-SELECT * FROM answers
-WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
-
 CREATE VIEW active_qualification_levels AS
 SELECT * FROM qualification_levels
 WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
 
 CREATE VIEW active_qualification_score AS
 SELECT * FROM qualification_score
-WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
-
-CREATE VIEW active_qualifications AS
-SELECT * FROM qualifications
-WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
-
-CREATE VIEW active_customer_statuses AS
-SELECT * FROM customer_statuses
-WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
-
-CREATE VIEW active_message_rate_limits AS
-SELECT * FROM message_rate_limits
 WHERE start_date <= CURRENT_DATE AND CURRENT_DATE <= end_date;
 
 CREATE VIEW active_agency_users AS
@@ -1143,19 +1050,5 @@ CREATE VIEW active_ads_with_active_clients AS
 SELECT a.*
 FROM active_ads a
 JOIN active_clients c ON c.client_id = a.client_id;
-
--- =============================================================
--- 38. Ask AI Gap Analysis View
--- =============================================================
-CREATE OR REPLACE VIEW v_ask_ai_gaps AS
-SELECT 
-    question,
-    count(*) as times_asked,
-    array_agg(DISTINCT status) as error_types,
-    max(submitted_at) as last_asked
-FROM ask_ai_log
-WHERE status IN ('unanswered', 'no_context')
-GROUP BY question
-ORDER BY times_asked DESC;
 
 COMMIT;

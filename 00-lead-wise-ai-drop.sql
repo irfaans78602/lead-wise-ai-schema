@@ -3,12 +3,6 @@
 -- Drops everything created by 10-lead-wise-ai-schema.sql.
 -- Run before 10-lead-wise-ai-schema.sql for a clean rebuild.
 -- Postgres 14+.
---
--- Every DROP uses CASCADE, so statement order no longer matters.
--- Every table/view/function in the schema is listed below.
--- Section 5 reports anything left over.
---
--- Assumes the schema lives in "public".
 -- =============================================================
 
 BEGIN;
@@ -16,7 +10,6 @@ BEGIN;
 -- -------------------------------------------------------------
 -- 1. Views
 -- -------------------------------------------------------------
-DROP VIEW IF EXISTS v_ask_ai_gaps                  CASCADE;
 DROP VIEW IF EXISTS active_ads_with_active_clients CASCADE;
 DROP VIEW IF EXISTS active_client_users            CASCADE;
 DROP VIEW IF EXISTS active_agency_users            CASCADE;
@@ -85,8 +78,6 @@ DROP TABLE IF EXISTS message_rate_limits     CASCADE;
 
 -- Append-only runtime logs
 DROP TABLE IF EXISTS contacts                CASCADE;
-DROP TABLE IF EXISTS ask_ai_log              CASCADE;
-DROP TABLE IF EXISTS site_content            CASCADE;
 
 DROP TABLE IF EXISTS segments                CASCADE;
 DROP TABLE IF EXISTS countries               CASCADE;
