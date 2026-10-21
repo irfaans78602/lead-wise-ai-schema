@@ -1,0 +1,1 @@
+--UPDATE clients SET brand_color = '#3B82F6' WHERE brand_color = '#2BB673';

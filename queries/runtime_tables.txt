@@ -1,0 +1,9 @@
+clients
+client_messages
+client_users
+ad_confirmations
+ad_reopen_prompts
+ads
+faqs
+pricing_discounts
+qualification_score

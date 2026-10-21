@@ -333,7 +333,6 @@ CREATE TABLE pricing_discounts (
     CHECK (
         (discount_type = 'volume'
          AND tier_id IS NULL
-         AND client_id IS NULL
          AND country_id IS NULL
          AND segment_id IS NULL
          AND field_name IS NULL
@@ -373,6 +372,12 @@ CREATE INDEX pricing_discounts_lookup_idx
 CREATE UNIQUE INDEX pricing_discounts_volume_unique
     ON pricing_discounts (discount_type, leads_min, leads_max, start_date)
     WHERE client_id IS NULL AND country_id IS NULL AND segment_id IS NULL;
+
+-- Volume tiers linked to a client (client_id set). The platform-wide
+-- index above only covers client_id IS NULL.
+CREATE UNIQUE INDEX pricing_discounts_client_volume_unique
+    ON pricing_discounts (client_id, discount_type, leads_min, leads_max, start_date)
+    WHERE client_id IS NOT NULL AND discount_type = 'volume';
 
 CREATE UNIQUE INDEX pricing_discounts_agency_unique
     ON pricing_discounts (country_id, discount_type, leads_min, leads_max, start_date)
