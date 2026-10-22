@@ -10,6 +10,7 @@ BEGIN;
 -- -------------------------------------------------------------
 -- 1. Views
 -- -------------------------------------------------------------
+DROP VIEW IF EXISTS active_ads_with_merged_emails CASCADE;
 DROP VIEW IF EXISTS active_ads_with_active_clients CASCADE;
 DROP VIEW IF EXISTS active_client_users            CASCADE;
 DROP VIEW IF EXISTS active_agency_users            CASCADE;

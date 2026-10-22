@@ -16,9 +16,11 @@ CREATE TABLE clients (
     client_name         TEXT NOT NULL,
     admin_email         TEXT NOT NULL,
     
-    -- Shared Configuration (Inherited by ALL instances if they are NULL)
-    db_connect_string   TEXT NOT NULL,
-    gemini_api_key      TEXT NOT NULL,
+    -- Shared Configuration (Inherited by ALL instances if they are NULL).
+    -- db_connect_string and gemini_api_key are nullable: a client may leave
+    -- them empty if every instance supplies its own value.
+    db_connect_string   TEXT,
+    gemini_api_key      TEXT,
     allowed_origins     TEXT, 
     brand_color         TEXT DEFAULT '#2BB673',
     

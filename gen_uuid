@@ -1,0 +1,2 @@
+# Random (version 4), the usual choice for new client_id / instance_id values
+python -c "import uuid; print(uuid.uuid4())"

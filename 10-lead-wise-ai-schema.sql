@@ -1056,4 +1056,20 @@ SELECT a.*
 FROM active_ads a
 JOIN active_clients c ON c.client_id = a.client_id;
 
+-- New view for email routing logic (Ad-level overrides Client-level)
+CREATE VIEW active_ads_with_merged_emails AS
+SELECT 
+    a.ad_id,
+    a.client_id,
+    a.ad_name,
+    a.source_ad_id,
+    a.language_id,
+    COALESCE(a.email_to, c.email_to) AS email_to,
+    COALESCE(a.email_cc, c.email_cc) AS email_cc,
+    COALESCE(a.email_bcc, c.email_bcc) AS email_bcc,
+    a.start_date,
+    a.end_date
+FROM active_ads a
+JOIN active_clients c ON c.client_id = a.client_id;
+
 COMMIT;

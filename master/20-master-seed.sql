@@ -22,8 +22,7 @@ VALUES (
 )
 ON CONFLICT (client_id) DO NOTHING;
 
--- 2. Insert the Public Instance (Website Chat)
--- Using the leaf_ad_id from your 60-instance.json as the instance_id
+-- 2. Insert the Public Instance (Ask AI)
 INSERT INTO instances (
     instance_id, 
     client_id, 
@@ -37,7 +36,6 @@ VALUES (
 ON CONFLICT (instance_id) DO NOTHING;
 
 -- 3. Insert the Internal Instance (Staff Assistant)
--- Using a new dummy UUID for the internal bot
 INSERT INTO instances (
     instance_id, 
     client_id, 
