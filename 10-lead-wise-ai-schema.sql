@@ -282,6 +282,11 @@ CREATE TABLE clients (
                          CHECK (closed_behavior IN ('reply','silent')),
     reopen_policy        TEXT NOT NULL DEFAULT 'reopen'
                          CHECK (reopen_policy IN ('reopen','prompt','forward')),
+    -- Comma-delimited CORS allowlist for the live chatbot, no spaces, e.g.
+    -- 'https://example.com,https://www.example.com'. Lowercase, no trailing slash.
+    allowed_origins      TEXT NOT NULL DEFAULT ''
+                         CHECK (allowed_origins = ''
+                                OR allowed_origins ~ '^https?://[a-z0-9.-]+(:[0-9]{1,5})?(,https?://[a-z0-9.-]+(:[0-9]{1,5})?)*$'),
     start_date           DATE NOT NULL DEFAULT '1900-01-01',
     end_date             DATE NOT NULL DEFAULT '9999-12-31',
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),

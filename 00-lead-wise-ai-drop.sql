@@ -62,6 +62,8 @@ DROP TABLE IF EXISTS invoice_payments        CASCADE;
 DROP TABLE IF EXISTS client_messages         CASCADE;
 DROP TABLE IF EXISTS client_users            CASCADE;
 DROP TABLE IF EXISTS agency_users            CASCADE;
+-- Superseded early draft of the CORS allowlist (now clients.allowed_origins).
+DROP TABLE IF EXISTS client_allowed_origins CASCADE;
 DROP TABLE IF EXISTS clients                 CASCADE;
 DROP TABLE IF EXISTS agencies                CASCADE;
 
